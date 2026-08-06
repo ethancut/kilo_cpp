@@ -1,0 +1,19 @@
+{
+  "version": 8,
+  "configurePresets": [
+    {
+      "toolchainFile": "C:/Users/ethan/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "name": "text_editor",
+      "displayName": "Clang-cl 22.1.8 x86_64-pc-windows-msvc",
+      "description": "Using compilers: C = C:\\Program Files\\LLVM\\bin\\clang-cl.exe, CXX = C:\\Program Files\\LLVM\\bin\\clang-cl.exe",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",
+        "CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang-cl.exe",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ]
+}
