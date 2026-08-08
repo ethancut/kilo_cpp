@@ -5,11 +5,12 @@
 
 /***  defines  ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
+#define NOTEBOOK_VERSION "0.0.1"
 /***  data  ***/
 typedef struct {
   DWORD originalMode;
-  int screenrows;
-  int screencols;
+  int screenrows, screencols;
+  int cx, cy;
 } editorConfig;
 
 editorConfig E;
@@ -65,14 +66,30 @@ void abAppend(std::string &ab, const char *s) { ab += s; }
 void editorDrawRows(std::string &ab) {
 
   for (int y = 0; y < E.screenrows - 1; ++y) {
-    ab += "~\r\n";
+    if (y == E.screenrows / 3) {
+      std::string welcome =
+          std::format("Notebook editor -- version {}\r\n", NOTEBOOK_VERSION);
+      if (welcome.length() > static_cast<size_t>(E.screencols))
+        welcome.erase(E.screencols);
+
+      int padding = (E.screencols - welcome.length()) / 2;
+      if (padding) {
+        ab += "~";
+        padding--;
+      }
+      while (padding--)
+        ab += " ";
+      ab += welcome;
+    } else {
+      ab += "~\x1b[K\r\n";
+    }
   }
-  ab += "~";
+  ab += "~\x1b[K";
 }
 void editorRefreshScreen() {
   std::string ab;
   ab += "\x1b[?25l"; // hide cursor
-  ab += "\x1b[H\x1b[2J\x1b[3J";
+  ab += "\x1b[H";
   editorDrawRows(ab);
 
   ab += "\x1b[H";
