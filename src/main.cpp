@@ -1,15 +1,26 @@
-// #include <cctype>
 #include <cstdlib>
 #include <iostream>
-// #include <processenv.h>
-// #include <winbase.h>
 #include <windows.h>
+
 /***  defines  ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
 /***  data  ***/
-DWORD originalMode = 0;
+typedef struct {
+  DWORD originalMode;
+} editorConfig;
+
+editorConfig E;
 
 /***  terminal  ***/
+int getWindowSize(int *rows, int *cols) {
+  HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+
+  if (GetConsoleScreenBufferInfo(hConsole, &csbi)) {
+    *cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    *rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+  }
+}
 void editorDrawRows() {
 
   for (int y = 0; y < 24; ++y) {
@@ -31,19 +42,20 @@ void die() {
 
 void disableRawMode() {
   HANDLE hInput = GetStdHandle(STD_INPUT_HANDLE);
-  if (!SetConsoleMode(hInput, originalMode))
+  if (!SetConsoleMode(hInput, E.originalMode))
     die();
 }
 void enableRawMode() {
+  // restore console to normal state after program execution
   atexit(disableRawMode);
   HANDLE hInput = GetStdHandle(STD_INPUT_HANDLE);
   if (hInput == INVALID_HANDLE_VALUE)
     die();
 
-  if (!GetConsoleMode(hInput, &originalMode))
+  if (!GetConsoleMode(hInput, &E.originalMode))
     die();
 
-  DWORD rawMode = originalMode;
+  DWORD rawMode = E.originalMode;
   rawMode &=
       ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_VIRTUAL_TERMINAL_INPUT);
   rawMode &= ~(ENABLE_PROCESSED_INPUT |
@@ -80,11 +92,9 @@ int main() {
   enableRawMode();
 
   while (true) {
-    editorProcessKeypress();
     editorRefreshScreen();
+    editorProcessKeypress();
   }
-
-  // restore console to normal state after program execution
 
   return 0;
 }
