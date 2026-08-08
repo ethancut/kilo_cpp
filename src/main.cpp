@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <iostream>
+#include <string>
 #include <windows.h>
 
 /***  defines  ***/
@@ -31,19 +32,53 @@ int getWindowSize(int *rows, int *cols) {
     return -1;
   }
 }
-void editorDrawRows() {
+unsigned char editorReadKey() {
+  DWORD nread;
+  INPUT_RECORD input;
+  while (true) {
+    if (!ReadConsoleInputA(GetStdHandle(STD_INPUT_HANDLE), &input, 1, &nread) ||
+        nread != 1)
+      die();
+    if (input.EventType == KEY_EVENT && input.Event.KeyEvent.bKeyDown) {
+      return input.Event.KeyEvent.uChar.AsciiChar;
+    }
+  }
+}
+int getCursorPosition(int *rows, int *cols) {
+  HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+
+  if (!GetConsoleScreenBufferInfo(hConsole, &csbi)) {
+    return -1;
+  }
+
+  *rows = csbi.dwCursorPosition.Y - csbi.srWindow.Top + 1;
+  *cols = csbi.dwCursorPosition.X - csbi.srWindow.Left + 1;
+
+  return 0;
+}
+/***  append buffer  ***/
+
+void abAppend(std::string &ab, const char *s) { ab += s; }
+
+/*** output ***/
+void editorDrawRows(std::string &ab) {
 
   for (int y = 0; y < E.screenrows - 1; ++y) {
-    std::cout << "~\r\n";
+    ab += "~\r\n";
   }
-  std::cout << "~";
+  ab += "~";
 }
 void editorRefreshScreen() {
-  std::cout << "\x1b[H\x1b[2J\x1b[3J" << std::flush;
+  std::string ab;
+  ab += "\x1b[?25l"; // hide cursor
+  ab += "\x1b[H\x1b[2J\x1b[3J";
+  editorDrawRows(ab);
 
-  editorDrawRows();
+  ab += "\x1b[H";
+  ab += "\x1b[?25h"; // show cursor
 
-  std::cout << "\x1b[H";
+  std::cout << ab << std::flush;
 }
 
 void disableRawMode() {
@@ -72,31 +107,8 @@ void enableRawMode() {
   }
 }
 
-unsigned char editorReadKey() {
-  DWORD nread;
-  INPUT_RECORD input;
-  while (true) {
-    if (!ReadConsoleInputA(GetStdHandle(STD_INPUT_HANDLE), &input, 1, &nread) ||
-        nread != 1)
-      die();
-    if (input.EventType == KEY_EVENT && input.Event.KeyEvent.bKeyDown) {
-      return input.Event.KeyEvent.uChar.AsciiChar;
-    }
-  }
-}
-int getCursorPosition(int *rows, int *cols) {
-  HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-  CONSOLE_SCREEN_BUFFER_INFO csbi;
+/***input ***/
 
-  if (!GetConsoleScreenBufferInfo(hConsole, &csbi)) {
-    return -1;
-  }
-
-  *rows = csbi.dwCursorPosition.Y - csbi.srWindow.Top + 1;
-  *cols = csbi.dwCursorPosition.X - csbi.srWindow.Left + 1;
-
-  return 0;
-}
 void editorProcessKeypress() {
   unsigned char c = editorReadKey();
   switch (c) {
@@ -110,8 +122,6 @@ void editorProcessKeypress() {
 void initEditor() {
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die();
-  std::cout << std::format("rows: {} cols: {}", E.screenrows, E.screencols)
-            << std::endl;
 }
 int main() {
   enableRawMode();
