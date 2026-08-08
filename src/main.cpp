@@ -7,11 +7,18 @@
 /***  data  ***/
 typedef struct {
   DWORD originalMode;
+  int screenrows;
+  int screencols;
 } editorConfig;
 
 editorConfig E;
 
 /***  terminal  ***/
+void die() {
+  std::cout << "\x1b[H\x1b[2J\x1b[3J" << std::flush;
+  std::cout << GetLastError() << std::endl;
+  exit(1);
+}
 int getWindowSize(int *rows, int *cols) {
   HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
   CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -19,13 +26,17 @@ int getWindowSize(int *rows, int *cols) {
   if (GetConsoleScreenBufferInfo(hConsole, &csbi)) {
     *cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
     *rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    return 0;
+  } else {
+    return -1;
   }
 }
 void editorDrawRows() {
 
-  for (int y = 0; y < 24; ++y) {
-    std::cout << "~" << std::endl;
+  for (int y = 0; y < E.screenrows - 1; ++y) {
+    std::cout << "~\r\n";
   }
+  std::cout << "~";
 }
 void editorRefreshScreen() {
   std::cout << "\x1b[H\x1b[2J\x1b[3J" << std::flush;
@@ -33,11 +44,6 @@ void editorRefreshScreen() {
   editorDrawRows();
 
   std::cout << "\x1b[H";
-}
-void die() {
-  std::cout << "\x1b[H\x1b[2J\x1b[3J" << std::flush;
-  std::cout << GetLastError();
-  exit(1);
 }
 
 void disableRawMode() {
@@ -78,6 +84,19 @@ unsigned char editorReadKey() {
     }
   }
 }
+int getCursorPosition(int *rows, int *cols) {
+  HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+
+  if (!GetConsoleScreenBufferInfo(hConsole, &csbi)) {
+    return -1;
+  }
+
+  *rows = csbi.dwCursorPosition.Y - csbi.srWindow.Top + 1;
+  *cols = csbi.dwCursorPosition.X - csbi.srWindow.Left + 1;
+
+  return 0;
+}
 void editorProcessKeypress() {
   unsigned char c = editorReadKey();
   switch (c) {
@@ -88,8 +107,15 @@ void editorProcessKeypress() {
   }
 }
 /***  init  ***/
+void initEditor() {
+  if (getWindowSize(&E.screenrows, &E.screencols) == -1)
+    die();
+  std::cout << std::format("rows: {} cols: {}", E.screenrows, E.screencols)
+            << std::endl;
+}
 int main() {
   enableRawMode();
+  initEditor();
 
   while (true) {
     editorRefreshScreen();
