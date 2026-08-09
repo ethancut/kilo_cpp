@@ -2,10 +2,13 @@
 #include <iostream>
 #include <string>
 #include <windows.h>
+#include <winuser.h>
 
 /***  defines  ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define NOTEBOOK_VERSION "0.0.1"
+
+enum editorKey { ARROW_LEFT = 1000, ARROW_RIGHT, ARROW_UP, ARROW_DOWN };
 /***  data  ***/
 typedef struct {
   DWORD originalMode;
@@ -33,18 +36,36 @@ int getWindowSize(int *rows, int *cols) {
     return -1;
   }
 }
-unsigned char editorReadKey() {
+int editorReadKey() {
   DWORD nread;
   INPUT_RECORD input;
   while (true) {
     if (!ReadConsoleInputA(GetStdHandle(STD_INPUT_HANDLE), &input, 1, &nread) ||
         nread != 1)
       die();
-    if (input.EventType == KEY_EVENT && input.Event.KeyEvent.bKeyDown) {
-      return input.Event.KeyEvent.uChar.AsciiChar;
+    if (input.EventType != KEY_EVENT || !input.Event.KeyEvent.bKeyDown) {
+      continue;
+    }
+    KEY_EVENT_RECORD &key = input.Event.KeyEvent;
+    switch (key.wVirtualKeyCode) {
+    case VK_UP:
+      return ARROW_UP;
+      break;
+    case VK_DOWN:
+      return ARROW_DOWN;
+      break;
+    case VK_LEFT:
+      return ARROW_LEFT;
+      break;
+    case VK_RIGHT:
+      return ARROW_RIGHT;
+      break;
+    default:
+      return key.uChar.AsciiChar;
     }
   }
 }
+
 int getCursorPosition(int *rows, int *cols) {
   HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
   CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -92,7 +113,8 @@ void editorRefreshScreen() {
   ab += "\x1b[H";
   editorDrawRows(ab);
 
-  ab += "\x1b[H";
+  std::string buf = std::format("\x1b[{};{}H", E.cy + 1, E.cx + 1);
+  ab += buf;
   ab += "\x1b[?25h"; // show cursor
 
   std::cout << ab << std::flush;
@@ -125,18 +147,45 @@ void enableRawMode() {
 }
 
 /***input ***/
-
+void editorMoveCursor(int key) {
+  switch (key) {
+  case ARROW_LEFT:
+    if (E.cx != 0)
+      E.cx--;
+    break;
+  case ARROW_RIGHT:
+    if (E.cx < E.screencols - 1)
+      E.cx++;
+    break;
+  case ARROW_UP:
+    if (E.cy != 0)
+      E.cy--;
+    break;
+  case ARROW_DOWN:
+    if (E.cy < E.screenrows - 1)
+      E.cy++;
+    break;
+  }
+}
 void editorProcessKeypress() {
-  unsigned char c = editorReadKey();
+  int c = editorReadKey();
   switch (c) {
   case CTRL_KEY('q'):
     std::cout << "\x1b[H\x1b[2J\x1b[3J" << std::flush;
     exit(0);
     break;
+
+  case ARROW_LEFT:
+  case ARROW_RIGHT:
+  case ARROW_UP:
+  case ARROW_DOWN:
+    editorMoveCursor(c);
+    break;
   }
 }
 /***  init  ***/
 void initEditor() {
+  E.cx = E.cy = 0;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die();
 }
