@@ -13,7 +13,7 @@ namespace fs = std::filesystem;
 /***  defines  ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define NOTEBOOK_VERSION "0.0.1"
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 enum editorKey {
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
@@ -152,6 +152,12 @@ void editorScroll() {
   if (E.cy >= E.rowoff + E.screenrows) {
     E.rowoff = E.cy - E.screenrows + 1;
   }
+  if (E.cx < E.coloff) {
+    E.coloff = E.cx;
+  }
+  if (E.cx >= E.coloff + E.screencols) {
+    E.coloff = E.cx - E.screencols + 1;
+  }
 }
 void editorDrawRows(std::string &ab) {
 
@@ -175,10 +181,12 @@ void editorDrawRows(std::string &ab) {
         ab += "~";
       }
     } else {
-      int len = E.rows[filerow].size();
+      int len = E.rows[filerow].size() - E.coloff;
+      if (len < 0)
+        len = 0;
       if (len > E.screencols)
         len = E.screencols;
-      ab.append(E.rows[filerow], 0, len);
+      ab.append(E.rows[filerow], E.coloff, len);
     }
     ab += "\x1b[K";
 
@@ -229,15 +237,29 @@ void enableRawMode() {
 
 /***input ***/
 void editorMoveCursor(int key) {
+
+  const std::string *row =
+      (static_cast<size_t>(E.cy) < E.rows.size()) ? &E.rows[E.cy] : nullptr;
   switch (key) {
   case ARROW_LEFT:
-    if (E.cx != 0)
+    if (E.cx != 0) {
       E.cx--;
+
+    } else if (E.cy > 0) {
+      E.cy--;
+      E.cx = E.rows[E.cy].size();
+    }
     break;
-  case ARROW_RIGHT:
-    if (E.cx < E.screencols - 1)
+  case ARROW_RIGHT: {
+
+    if (row && static_cast<size_t>(E.cx) < row->size()) {
       E.cx++;
+    } else if (row && static_cast<size_t>(E.cx) == row->size()) {
+      E.cy++;
+      E.cx = 0;
+    }
     break;
+  }
   case ARROW_UP:
     if (E.cy != 0)
       E.cy--;
@@ -246,6 +268,11 @@ void editorMoveCursor(int key) {
     if (static_cast<size_t>(E.cy) < E.rows.size())
       E.cy++;
     break;
+  }
+  row = (static_cast<size_t>(E.cy) < E.rows.size()) ? &E.rows[E.cy] : nullptr;
+  int rowlen = row ? row->size() : 0;
+  if (E.cx > rowlen) {
+    E.cx = rowlen;
   }
 }
 void editorProcessKeypress() {
