@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 #include <windows.h>
 #include <winuser.h>
 
@@ -12,7 +13,7 @@ namespace fs = std::filesystem;
 /***  defines  ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define NOTEBOOK_VERSION "0.0.1"
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 enum editorKey {
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
@@ -29,8 +30,9 @@ typedef struct {
   DWORD originalMode;
   int screenrows, screencols;
   int cx, cy;
-  int numrows;
-  std::string row;
+  int rowoff;
+  int coloff;
+  std::vector<std::string> rows;
 } editorConfig;
 
 editorConfig E;
@@ -116,6 +118,7 @@ int getCursorPosition(int *rows, int *cols) {
 
   return 0;
 }
+/***  row operations  ***/
 
 /***  file i/o  ***/
 void editorOpen(fs::path name) {
@@ -128,26 +131,34 @@ void editorOpen(fs::path name) {
   //   E.row += line;
 
   // }
-  std::getline(file, line);
-  E.row = line;
-  ++E.numrows;
+  while (std::getline(file, line)) {
+    E.rows.emplace_back(line);
+  }
 }
 void editorOpen() {
   std::string line = "hello world!";
 
-  E.row = line;
-  ++E.numrows;
+  E.rows.emplace_back(line);
 }
 /***  append buffer  ***/
 
 void abAppend(std::string &ab, const char *s) { ab += s; }
 
 /*** output ***/
+void editorScroll() {
+  if (E.cy < E.rowoff) {
+    E.rowoff = E.cy;
+  }
+  if (E.cy >= E.rowoff + E.screenrows) {
+    E.rowoff = E.cy - E.screenrows + 1;
+  }
+}
 void editorDrawRows(std::string &ab) {
 
   for (int y = 0; y < E.screenrows; ++y) {
-    if (y >= E.numrows) {
-      if (y == E.screenrows / 3) {
+    int filerow = y + E.rowoff;
+    if (static_cast<size_t>(filerow) >= E.rows.size()) {
+      if (y == E.screenrows / 3 && E.rows.size() == 0) {
         std::string welcome =
             std::format("Notebook editor -- version {}", NOTEBOOK_VERSION);
         if (welcome.length() > static_cast<size_t>(E.screencols))
@@ -164,7 +175,10 @@ void editorDrawRows(std::string &ab) {
         ab += "~";
       }
     } else {
-      ab += E.row;
+      int len = E.rows[filerow].size();
+      if (len > E.screencols)
+        len = E.screencols;
+      ab.append(E.rows[filerow], 0, len);
     }
     ab += "\x1b[K";
 
@@ -174,12 +188,13 @@ void editorDrawRows(std::string &ab) {
 }
 
 void editorRefreshScreen() {
+  editorScroll();
   std::string ab;
   ab += "\x1b[?25l"; // hide cursor
   ab += "\x1b[H";
   editorDrawRows(ab);
 
-  std::string buf = std::format("\x1b[{};{}H", E.cy + 1, E.cx + 1);
+  std::string buf = std::format("\x1b[{};{}H", (E.cy - E.rowoff) + 1, E.cx + 1);
   ab += buf;
   ab += "\x1b[?25h"; // show cursor
 
@@ -228,7 +243,7 @@ void editorMoveCursor(int key) {
       E.cy--;
     break;
   case ARROW_DOWN:
-    if (E.cy < E.screenrows - 1)
+    if (static_cast<size_t>(E.cy) < E.rows.size())
       E.cy++;
     break;
   }
@@ -264,7 +279,7 @@ void editorProcessKeypress() {
 }
 /***  init  ***/
 void initEditor() {
-  E.cx = E.cy = E.numrows = 0;
+  E.cx = E.cy = E.rowoff = E.coloff = 0;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die();
 }
