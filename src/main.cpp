@@ -1,19 +1,36 @@
 #include <cstdlib>
+#include <filesystem>
+#include <format>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <windows.h>
 #include <winuser.h>
 
+namespace fs = std::filesystem;
+
 /***  defines  ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define NOTEBOOK_VERSION "0.0.1"
 
-enum editorKey { ARROW_LEFT = 1000, ARROW_RIGHT, ARROW_UP, ARROW_DOWN };
+enum editorKey {
+  ARROW_LEFT = 1000,
+  ARROW_RIGHT,
+  ARROW_UP,
+  ARROW_DOWN,
+  DEL_KEY,
+  PAGE_UP,
+  PAGE_DOWN,
+  HOME_KEY,
+  END_KEY
+};
 /***  data  ***/
 typedef struct {
   DWORD originalMode;
   int screenrows, screencols;
   int cx, cy;
+  int numrows;
+  std::string row;
 } editorConfig;
 
 editorConfig E;
@@ -21,7 +38,11 @@ editorConfig E;
 /***  terminal  ***/
 void die() {
   std::cout << "\x1b[H\x1b[2J\x1b[3J" << std::flush;
-  std::cout << GetLastError() << std::endl;
+  std::cout << "WinAPI ERR: " << GetLastError() << std::endl;
+  exit(1);
+}
+void die(std::string_view err) {
+  std::cout << "ERR: " << err << std::endl;
   exit(1);
 }
 int getWindowSize(int *rows, int *cols) {
@@ -36,6 +57,7 @@ int getWindowSize(int *rows, int *cols) {
     return -1;
   }
 }
+
 int editorReadKey() {
   DWORD nread;
   INPUT_RECORD input;
@@ -60,6 +82,21 @@ int editorReadKey() {
     case VK_RIGHT:
       return ARROW_RIGHT;
       break;
+    case VK_PRIOR:
+      return PAGE_UP;
+      break;
+    case VK_NEXT:
+      return PAGE_DOWN;
+      break;
+    case VK_HOME:
+      return HOME_KEY;
+      break;
+    case VK_END:
+      return END_KEY;
+      break;
+    case VK_DELETE:
+      return DEL_KEY;
+      break;
     default:
       return key.uChar.AsciiChar;
     }
@@ -79,6 +116,28 @@ int getCursorPosition(int *rows, int *cols) {
 
   return 0;
 }
+
+/***  file i/o  ***/
+void editorOpen(fs::path name) {
+  std::fstream file(name);
+  if (!file.is_open())
+    die("Invalid filepath");
+  std::string line;
+
+  // while (std::getline(file, line)) {
+  //   E.row += line;
+
+  // }
+  std::getline(file, line);
+  E.row = line;
+  ++E.numrows;
+}
+void editorOpen() {
+  std::string line = "hello world!";
+
+  E.row = line;
+  ++E.numrows;
+}
 /***  append buffer  ***/
 
 void abAppend(std::string &ab, const char *s) { ab += s; }
@@ -86,27 +145,34 @@ void abAppend(std::string &ab, const char *s) { ab += s; }
 /*** output ***/
 void editorDrawRows(std::string &ab) {
 
-  for (int y = 0; y < E.screenrows - 1; ++y) {
-    if (y == E.screenrows / 3) {
-      std::string welcome =
-          std::format("Notebook editor -- version {}\r\n", NOTEBOOK_VERSION);
-      if (welcome.length() > static_cast<size_t>(E.screencols))
-        welcome.erase(E.screencols);
+  for (int y = 0; y < E.screenrows; ++y) {
+    if (y >= E.numrows) {
+      if (y == E.screenrows / 3) {
+        std::string welcome =
+            std::format("Notebook editor -- version {}", NOTEBOOK_VERSION);
+        if (welcome.length() > static_cast<size_t>(E.screencols))
+          welcome.erase(E.screencols);
 
-      int padding = (E.screencols - welcome.length()) / 2;
-      if (padding) {
+        int padding = (E.screencols - welcome.length()) / 2;
+        if (padding) {
+          ab += "~";
+          --padding;
+        }
+        ab.append(padding, ' ');
+        ab += welcome;
+      } else {
         ab += "~";
-        padding--;
       }
-      while (padding--)
-        ab += " ";
-      ab += welcome;
     } else {
-      ab += "~\x1b[K\r\n";
+      ab += E.row;
     }
+    ab += "\x1b[K";
+
+    if (y < E.screenrows - 1)
+      ab += "\r\n";
   }
-  ab += "~\x1b[K";
 }
+
 void editorRefreshScreen() {
   std::string ab;
   ab += "\x1b[?25l"; // hide cursor
@@ -181,17 +247,35 @@ void editorProcessKeypress() {
   case ARROW_DOWN:
     editorMoveCursor(c);
     break;
+  case PAGE_UP:
+  case PAGE_DOWN: {
+    int times = E.screenrows;
+    while (times--)
+      editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+    break;
+  }
+  case HOME_KEY:
+    E.cx = 0;
+    break;
+  case END_KEY:
+    E.cx = E.screencols - 1;
+    break;
   }
 }
 /***  init  ***/
 void initEditor() {
-  E.cx = E.cy = 0;
+  E.cx = E.cy = E.numrows = 0;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die();
 }
-int main() {
+int main(int argc, char *argv[]) {
   enableRawMode();
   initEditor();
+  if (argc >= 2) {
+    editorOpen(argv[1]);
+  } else {
+    editorOpen();
+  }
 
   while (true) {
     editorRefreshScreen();

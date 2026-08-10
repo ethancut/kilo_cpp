@@ -7,6 +7,6 @@ kilo: src/main.cpp
 	$(CPPC) src/main.cpp -o kilo.exe $(CPPFLAGS)
 
 run: kilo
-	kilo.exe
+	./kilo.exe $(ARGS)
 clean:
 	@pwsh -NoProfile -Command "if (Test-Path kilo.exe) { Remove-Item kilo.exe }"
