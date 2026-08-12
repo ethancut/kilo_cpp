@@ -1,3 +1,5 @@
+
+#include <ostream>
 #define NOMINMAX
 #include <algorithm>
 #include <chrono>
@@ -20,6 +22,7 @@ namespace fs = std::filesystem;
 #define NOTEBOOK_TAB_STOP 8
 
 enum editorKey {
+  BACKSPACE = 127,
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
   ARROW_UP,
@@ -46,7 +49,13 @@ typedef struct {
 } editorConfig;
 
 editorConfig E;
-
+/***  prototypes  ***/
+template <typename... Args>
+void editorSetStatusMessage(const std::format_string<Args...> fmt,
+                            Args &&...args) {
+  E.statusmsg = std::format(fmt, std::forward<Args>(args)...);
+  E.statusmsg_time = std::chrono::steady_clock::now();
+}
 /***  terminal  ***/
 void die() {
   std::cout << "\x1b[H\x1b[2J\x1b[3J" << std::flush;
@@ -109,7 +118,12 @@ int editorReadKey() {
     case VK_DELETE:
       return DEL_KEY;
       break;
+    case VK_BACK:
+      return BACKSPACE;
     default:
+      if (key.uChar.AsciiChar == 0) {
+        continue;
+      }
       return key.uChar.AsciiChar;
     }
   }
@@ -129,6 +143,7 @@ int getCursorPosition(int *rows, int *cols) {
   return 0;
 }
 /***  row operations  ***/
+
 int editorRowRxToCx(size_t index, size_t cx) {
   std::string &row = E.rows[index];
   int rx = 0;
@@ -140,26 +155,29 @@ int editorRowRxToCx(size_t index, size_t cx) {
   return rx;
 }
 void editorUpdateRow(size_t index) {
+  const std::string &row = E.rows[index];
 
-  std::string &row = E.render[index];
   int tabs = 0;
-  for (size_t j = 0; j < row.size(); j++)
-    if (row[j] == '\t')
-      tabs++;
+  for (const char &c : row) {
+    if (c == '\t')
+      ++tabs;
+  }
 
   std::string rendered;
-  rendered.reserve(row.size() + tabs * (NOTEBOOK_TAB_STOP - 1) + 1);
-  for (size_t i = 0; i < row.size(); ++i) {
-    if (row[i] == '\t') {
+  rendered.reserve(row.size() + tabs * (NOTEBOOK_TAB_STOP - 1));
+
+  for (const char &c : row) {
+    if (c == '\t') {
       rendered += ' ';
       while (rendered.size() % NOTEBOOK_TAB_STOP != 0) {
         rendered += ' ';
       }
     } else {
-      rendered += row[i];
+      rendered += c;
     }
   }
-  row = std::move(rendered);
+
+  E.render[index] = std::move(rendered);
 }
 void editorAppendRow(std::string s) {
   E.rows.emplace_back(s);
@@ -167,6 +185,21 @@ void editorAppendRow(std::string s) {
   E.render.emplace_back(s);
   size_t index = E.render.size() - 1;
   editorUpdateRow(index);
+}
+void editorRowInsertChar(size_t index, size_t at, int c) {
+  std::string &row = E.rows[index];
+  if (at > row.size())
+    at = row.size();
+  row.insert(at, 1, static_cast<char>(c));
+  editorUpdateRow(index);
+}
+/*** editor operations ***/
+void editorInsertChar(int c) {
+  if (E.cy == E.rows.size()) {
+    editorAppendRow("");
+  }
+  editorRowInsertChar(E.cy, E.cx, c);
+  ++E.cx;
 }
 /***  file i/o  ***/
 void editorOpen(fs::path name) {
@@ -176,10 +209,6 @@ void editorOpen(fs::path name) {
     die("Invalid filepath");
   std::string line;
 
-  // while (std::getline(file, line)) {
-  //   E.row += line;
-
-  // }
   while (std::getline(file, line)) {
     editorAppendRow(line);
   }
@@ -189,11 +218,32 @@ void editorOpen() {
 
   editorAppendRow(line);
 }
+
+void editorSave() {
+  if (E.filename.empty())
+    return;
+  std::ofstream fd(E.filename);
+  if (!fd.is_open())
+    return;
+  size_t bytesWritten = 0;
+  for (const std::string &line : E.rows) {
+    fd << line << std::endl;
+    bytesWritten += line.size() + 1;
+  }
+  fd.close();
+
+  if (fd.fail()) {
+    editorSetStatusMessage("Write/Save error");
+  } else {
+    editorSetStatusMessage("{} bytes written to disc", bytesWritten);
+  }
+}
 /***  append buffer  ***/
 
 void abAppend(std::string &ab, const char *s) { ab += s; }
 
 /*** output ***/
+
 void editorScroll() {
   E.rx = 0;
   if (static_cast<size_t>(E.cy) < E.rows.size()) {
@@ -295,13 +345,6 @@ void editorRefreshScreen() {
   ab += "\x1b[?25h"; // show cursor
   std::cout << ab << std::flush;
 }
-template <typename... Args>
-void editorSetStatusMessage(const std::format_string<Args...> fmt,
-                            Args &&...args) {
-  E.statusmsg = std::format(fmt, std::forward<Args>(args)...);
-  E.statusmsg_time = std::chrono::steady_clock::now();
-}
-
 void disableRawMode() {
   HANDLE hInput = GetStdHandle(STD_INPUT_HANDLE);
   if (!SetConsoleMode(hInput, E.originalMode))
@@ -371,11 +414,16 @@ void editorMoveCursor(int key) {
 void editorProcessKeypress() {
   int c = editorReadKey();
   switch (c) {
+  case '\r':
+    break;
+
   case CTRL_KEY('q'):
     std::cout << "\x1b[H\x1b[2J\x1b[3J" << std::flush;
     exit(0);
     break;
-
+  case CTRL_KEY('s'):
+    editorSave();
+    break;
   case ARROW_LEFT:
   case ARROW_RIGHT:
   case ARROW_UP:
@@ -404,6 +452,17 @@ void editorProcessKeypress() {
       E.cx = E.rows[E.cy].size();
     }
     break;
+  case BACKSPACE:
+  case CTRL_KEY('h'):
+  case DEL_KEY:
+    /* TODO*/
+    break;
+  case CTRL_KEY('l'):
+  case '\x1b':
+    break;
+  default:
+    editorInsertChar(c);
+    break;
   }
 }
 /***  init  ***/
@@ -421,7 +480,7 @@ int main(int argc, char *argv[]) {
   } else {
     editorOpen();
   }
-  editorSetStatusMessage("HELP: Ctrl-Q = quit");
+  editorSetStatusMessage("HELP: CTRL-S = save | Ctrl-Q = quit");
 
   while (true) {
     editorRefreshScreen();
