@@ -20,6 +20,7 @@ namespace fs = std::filesystem;
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define NOTEBOOK_VERSION "0.0.1"
 #define NOTEBOOK_TAB_STOP 8
+#define NOTEBOOK_QUIT_TIMES 3
 
 enum editorKey {
   BACKSPACE = 127,
@@ -41,6 +42,7 @@ typedef struct {
   int rx;
   int rowoff;
   int coloff;
+  int dirty;
   std::vector<std::string> rows;
   std::vector<std::string> render;
   std::string filename;
@@ -185,6 +187,7 @@ void editorAppendRow(std::string s) {
   E.render.emplace_back(s);
   size_t index = E.render.size() - 1;
   editorUpdateRow(index);
+  ++E.dirty;
 }
 void editorRowInsertChar(size_t index, size_t at, int c) {
   std::string &row = E.rows[index];
@@ -192,6 +195,7 @@ void editorRowInsertChar(size_t index, size_t at, int c) {
     at = row.size();
   row.insert(at, 1, static_cast<char>(c));
   editorUpdateRow(index);
+  ++E.dirty;
 }
 /*** editor operations ***/
 void editorInsertChar(int c) {
@@ -212,6 +216,7 @@ void editorOpen(fs::path name) {
   while (std::getline(file, line)) {
     editorAppendRow(line);
   }
+  E.dirty = 0;
 }
 void editorOpen() {
   std::string line = "hello world!";
@@ -236,6 +241,7 @@ void editorSave() {
     editorSetStatusMessage("Write/Save error");
   } else {
     editorSetStatusMessage("{} bytes written to disc", bytesWritten);
+    E.dirty = 0;
   }
 }
 /***  append buffer  ***/
@@ -300,8 +306,8 @@ void editorDrawRows(std::string &ab) {
 void editorDrawStatusbar(std::string &ab) {
   ab += "\x1b[7m";
   std::string status = std::format(
-      "{:.20s} - {} lines", (!E.filename.empty()) ? E.filename : "[No Name]",
-      E.rows.size());
+      "{:.20s} - {} lines {}", (!E.filename.empty()) ? E.filename : "[No Name]",
+      E.rows.size(), E.dirty ? "(modified)" : "");
   std::string rstatus = std::format("{}/{}", E.cy + 1, E.rows.size());
 
   int len = std::min(status.size(), static_cast<size_t>(E.screencols));
@@ -412,12 +418,20 @@ void editorMoveCursor(int key) {
   }
 }
 void editorProcessKeypress() {
+  static int quit_times = NOTEBOOK_QUIT_TIMES;
   int c = editorReadKey();
   switch (c) {
   case '\r':
     break;
 
   case CTRL_KEY('q'):
+    if (E.dirty && quit_times > 0) {
+      editorSetStatusMessage(
+          "File has unsaved changes. Press Ctrl-Q {} more times to quit.",
+          quit_times);
+      quit_times--;
+      return;
+    }
     std::cout << "\x1b[H\x1b[2J\x1b[3J" << std::flush;
     exit(0);
     break;
@@ -467,7 +481,7 @@ void editorProcessKeypress() {
 }
 /***  init  ***/
 void initEditor() {
-  E.cx = E.cy = E.rx = E.rowoff = E.coloff = 0;
+  E.cx = E.cy = E.rx = E.rowoff = E.coloff = E.dirty = 0;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die();
   E.screenrows -= 2;
