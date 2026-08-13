@@ -1,5 +1,4 @@
 
-#include <ostream>
 #define NOMINMAX
 #include <algorithm>
 #include <chrono>
@@ -8,7 +7,9 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <ostream>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <windows.h>
 
@@ -189,6 +190,16 @@ void editorAppendRow(std::string s) {
   editorUpdateRow(index);
   ++E.dirty;
 }
+void editorFreeRow(size_t at) {
+  E.rows.erase(E.rows.begin() + at);
+  E.render.erase(E.render.begin() + at);
+}
+void editorDelRow(size_t at) {
+  if (at < 0 || at >= E.rows.size())
+    return;
+  editorFreeRow(at);
+  ++E.dirty;
+}
 void editorRowInsertChar(size_t index, size_t at, int c) {
   std::string &row = E.rows[index];
   if (at > row.size())
@@ -197,13 +208,42 @@ void editorRowInsertChar(size_t index, size_t at, int c) {
   editorUpdateRow(index);
   ++E.dirty;
 }
+void editorRowAppendString(size_t index, std::string_view s) {
+  std::string &row = E.rows[index];
+  row.append(s);
+  editorUpdateRow(index);
+  ++E.dirty;
+}
+void editorRowDelChar(size_t index, int at) {
+  std::string &row = E.rows[index];
+  if (at < 0 || static_cast<size_t>(at) >= row.size())
+    return;
+  row.erase(at, 1);
+  editorUpdateRow(index);
+  ++E.dirty;
+}
 /*** editor operations ***/
 void editorInsertChar(int c) {
-  if (E.cy == E.rows.size()) {
+  if (static_cast<size_t>(E.cy) == E.rows.size()) {
     editorAppendRow("");
   }
   editorRowInsertChar(E.cy, E.cx, c);
   ++E.cx;
+}
+void editorDelChar() {
+  if (static_cast<size_t>(E.cy) == E.rows.size())
+    return;
+  if (E.cx == 0 & E.cy == 0)
+    return;
+  if (E.cx > 0) {
+    editorRowDelChar(E.cy, E.cx - 1);
+    E.cx--;
+  } else {
+    E.cx = E.rows[E.cy - 1].size();
+    editorRowAppendString(E.cy - 1, E.rows[E.cy]);
+    editorDelRow(E.cy);
+    --E.cy;
+  }
 }
 /***  file i/o  ***/
 void editorOpen(fs::path name) {
@@ -469,7 +509,9 @@ void editorProcessKeypress() {
   case BACKSPACE:
   case CTRL_KEY('h'):
   case DEL_KEY:
-    /* TODO*/
+    if (c == DEL_KEY)
+      editorMoveCursor(ARROW_RIGHT);
+    editorDelChar();
     break;
   case CTRL_KEY('l'):
   case '\x1b':
@@ -478,6 +520,7 @@ void editorProcessKeypress() {
     editorInsertChar(c);
     break;
   }
+  quit_times = NOTEBOOK_QUIT_TIMES;
 }
 /***  init  ***/
 void initEditor() {
