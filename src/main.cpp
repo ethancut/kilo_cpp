@@ -182,10 +182,14 @@ void editorUpdateRow(size_t index) {
 
   E.render[index] = std::move(rendered);
 }
-void editorAppendRow(std::string s) {
-  E.rows.emplace_back(s);
 
-  E.render.emplace_back(s);
+void editorInsertRow(size_t at, std::string s) {
+  if (at < 0 || at > E.rows.size())
+    return;
+
+  E.rows.insert(E.rows.begin() + at, s);
+
+  E.render.insert(E.render.begin() + at, s);
   size_t index = E.render.size() - 1;
   editorUpdateRow(index);
   ++E.dirty;
@@ -225,10 +229,22 @@ void editorRowDelChar(size_t index, int at) {
 /*** editor operations ***/
 void editorInsertChar(int c) {
   if (static_cast<size_t>(E.cy) == E.rows.size()) {
-    editorAppendRow("");
+    editorInsertRow(E.rows.size(), "");
   }
   editorRowInsertChar(E.cy, E.cx, c);
   ++E.cx;
+}
+void editorInsertNewline() {
+  if (E.cx == 0) {
+    editorInsertRow(E.cy, "");
+  } else {
+    std::string &row = E.rows[E.cy];
+    editorInsertRow(E.cy + 1, row);
+
+    editorUpdateRow(E.cy + 1);
+  }
+  E.cy++;
+  E.cx = 0;
 }
 void editorDelChar() {
   if (static_cast<size_t>(E.cy) == E.rows.size())
@@ -254,14 +270,14 @@ void editorOpen(fs::path name) {
   std::string line;
 
   while (std::getline(file, line)) {
-    editorAppendRow(line);
+    editorInsertRow(E.rows.size(), line);
   }
   E.dirty = 0;
 }
 void editorOpen() {
   std::string line = "hello world!";
 
-  editorAppendRow(line);
+  editorInsertRow(E.rows.size(), line);
 }
 
 void editorSave() {
@@ -462,6 +478,7 @@ void editorProcessKeypress() {
   int c = editorReadKey();
   switch (c) {
   case '\r':
+    editorInsertNewline();
     break;
 
   case CTRL_KEY('q'):
